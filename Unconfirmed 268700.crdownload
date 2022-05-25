@@ -1,0 +1,1020 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[1]:
+
+
+get_ipython().system('pip install sklearn')
+get_ipython().system('pip install plotly')
+
+
+# In[2]:
+
+
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler, normalize
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+
+
+# In[3]:
+
+
+creditcard_df=pd.read_csv("D:/Data Analytics/Datasets/CC GENERAL.csv")
+# CUSTID: Identification of Credit Card holder 
+# BALANCE: Balance amount left in customer's account to make purchases
+# BALANCE_FREQUENCY: How frequently the Balance is updated, score between 0 and 1 (1 = frequently updated, 0 = not frequently updated)
+# PURCHASES: Amount of purchases made from account
+# ONEOFFPURCHASES: Maximum purchase amount done in one-go
+# INSTALLMENTS_PURCHASES: Amount of purchase done in installment
+# CASH_ADVANCE: Cash in advance given by the user
+# PURCHASES_FREQUENCY: How frequently the Purchases are being made, score between 0 and 1 (1 = frequently purchased, 0 = not frequently purchased)
+# ONEOFF_PURCHASES_FREQUENCY: How frequently Purchases are happening in one-go (1 = frequently purchased, 0 = not frequently purchased)
+# PURCHASES_INSTALLMENTS_FREQUENCY: How frequently purchases in installments are being done (1 = frequently done, 0 = not frequently done)
+# CASH_ADVANCE_FREQUENCY: How frequently the cash in advance being paid
+# CASH_ADVANCE_TRX: Number of Transactions made with "Cash in Advance"
+# PURCHASES_TRX: Number of purchase transactions made
+# CREDIT_LIMIT: Limit of Credit Card for user
+# PAYMENTS: Amount of Payment done by user
+# MINIMUM_PAYMENTS: Minimum amount of payments made by user  
+# PRC_FULL_PAYMENT: Percent of full payment paid by user
+# TENURE: Tenure of credit card service for user
+
+
+# In[ ]:
+
+
+creditcard_df
+
+
+# In[5]:
+
+
+creditcard_df.head(50)
+
+
+# In[6]:
+
+
+creditcard_df.tail(30)
+
+
+# In[7]:
+
+
+#For checking missing data
+sns.heatmap(creditcard_df.isnull(), yticklabels=False, cbar= False, cmap="Blues")
+
+
+# In[8]:
+
+
+#Descriptive Analysis
+creditcard_df.describe()
+
+
+# In[9]:
+
+
+creditcard_df.info()
+
+
+# In[10]:
+
+
+#For finding out the null values present in the given dataset
+creditcard_df.isnull().sum()
+
+
+# In[11]:
+
+
+#Filling up the missing values with the mean of the "Minimum Payment"
+creditcard_df.loc[(creditcard_df["MINIMUM_PAYMENTS"].isnull()==True), "MINIMUM_PAYMENTS"]=creditcard_df["MINIMUM_PAYMENTS"].mean()
+creditcard_df.loc[(creditcard_df["CREDIT_LIMIT"].isnull()== True),"CREDIT_LIMIT"]=creditcard_df["CREDIT_LIMIT"].mean()
+
+
+# In[12]:
+
+
+creditcard_df
+
+
+# In[13]:
+
+
+#Check for duplicated values
+creditcard_df.duplicated().sum()
+
+
+# In[14]:
+
+
+#The CUSTOMER ID column is not required hence it is dropped.
+creditcard_df.drop("CUST_ID",axis=1,inplace=True)
+
+
+# In[15]:
+
+
+creditcard_df
+
+
+# In[16]:
+
+
+n=len(creditcard_df.columns)
+n
+
+
+# In[17]:
+
+
+#Finding the names of the columns
+creditcard_df.columns
+
+
+# # Primary Data Visualizations
+
+# In[18]:
+
+
+# distplot combines the matplotlib.hist function with seaborn kdeplot()
+# KDE Plot represents the Kernel Density Estimate
+# KDE is used for visualizing the Probability Density of a continuous variable. 
+# KDE demonstrates the probability density at different values in a continuous variable. 
+
+# Mean of balance is $1500
+# 'Balance_Frequency' for most customers is updated frequently ~1
+# For 'PURCHASES_FREQUENCY', there are two distinct group of customers
+# For 'ONEOFF_PURCHASES_FREQUENCY' and 'PURCHASES_INSTALLMENT_FREQUENCY' most users don't do one off puchases or installment purchases frequently 
+# Very small number of customers pay their balance in full 'PRC_FULL_PAYMENT'~0
+# Credit limit average is around $4500
+# Most customers are ~11 years tenure
+
+plt.figure(figsize=(10,50))
+for i in range(len(creditcard_df.columns)):
+  plt.subplot(17, 1, i+1)
+  sns.distplot(creditcard_df[creditcard_df.columns[i]], kde_kws={"color": "b", "lw": 3, "label": "KDE"}, hist_kws={"color": "g"})
+  plt.title(creditcard_df.columns[i])
+
+plt.tight_layout()
+
+
+# In[19]:
+
+
+
+plt.figure(figsize=(15, 8))
+sns.heatmap(round(creditcard_df.corr(method='spearman'), 2), 
+            annot=True, mask=None)
+plt.show()
+
+
+# In[20]:
+
+
+sns.displot(x=creditcard_df['PURCHASES_FREQUENCY'], y=creditcard_df['PURCHASES'], data=creditcard_df);
+
+
+# In[21]:
+
+
+sns.displot(x=creditcard_df['PURCHASES_FREQUENCY'], y=creditcard_df['ONEOFF_PURCHASES_FREQUENCY'], data=creditcard_df);
+
+
+# In[22]:
+
+
+sns.displot(x=creditcard_df['CASH_ADVANCE_FREQUENCY'], y=creditcard_df['MINIMUM_PAYMENTS'], data=creditcard_df);
+
+
+# # Data Pre-Processing
+
+# In[23]:
+
+
+def null_values(creditcard_df):
+    null_value = creditcard_df.isnull().sum().sort_values(ascending=False)
+    percent_1 = creditcard_df.isnull().sum() / creditcard_df.isnull().count() * 100
+    percent_2 = (round(percent_1, 1)).sort_values(ascending=False)
+    missing_data = pd.concat([null_value, percent_2], axis=1, keys=['Total', '%'])
+    print(missing_data)
+
+
+# In[24]:
+
+
+def outliers(df, dt):
+    sorted(df[dt])
+    Q1 = df[dt].quantile(0.25)
+    Q3 = df[dt].quantile(0.75)
+    IQR = Q3 - Q1
+    print("Column:", dt)
+    print("Old Shape", df.shape)
+    upper_val = (Q3 + (1.5 * IQR))
+    lower_val = Q1 - (1.5 * IQR)
+    count = len(df[(df[dt] > upper_val) | (df[dt] < lower_val)])
+    df.drop(df[(df[dt] > upper_val) | (df[dt] < lower_val)].index, inplace=True)
+    print("New Shape", df.shape)
+    print("Count of Item Removed:", count)
+    print("Outliers ratio:", count / len(df[dt]))
+
+
+# In[25]:
+
+
+null_values(creditcard_df)
+
+
+# In[26]:
+
+
+creditcard_df["CREDIT_LIMIT"] = creditcard_df["CREDIT_LIMIT"].fillna(creditcard_df["CREDIT_LIMIT"].mean())
+creditcard_df["MINIMUM_PAYMENTS"] = creditcard_df["MINIMUM_PAYMENTS"].fillna(creditcard_df["MINIMUM_PAYMENTS"].mean())
+
+
+# In[27]:
+
+
+creditcard_df.head(50)
+
+
+# In[28]:
+
+
+def null_values(df):
+    null_value = df.isnull().sum().sort_values(ascending=False)
+    percent_1 = df.isnull().sum() / df.isnull().count() * 100
+    percent_2 = (round(percent_1, 1)).sort_values(ascending=False)
+    missing_data = pd.concat([null_value, percent_2], axis=1, keys=['Total', '%'])
+    print(missing_data)
+
+
+# In[29]:
+
+
+def outliers(df, dt):
+    sorted(df[dt])
+    Q1 = df[dt].quantile(0.25)
+    Q3 = df[dt].quantile(0.75)
+    IQR = Q3 - Q1
+    print("Column:", dt)
+    print("Old Shape", df.shape)
+    upper_val = (Q3 + (1.5 * IQR))
+    lower_val = Q1 - (1.5 * IQR)
+    count = len(df[(df[dt] > upper_val) | (df[dt] < lower_val)])
+    df.drop(df[(df[dt] > upper_val) | (df[dt] < lower_val)].index, inplace=True)
+    print("New Shape", df.shape)
+    print("Count of Item Removed:", count)
+    print("Outliers ratio:", count / len(df[dt]))
+
+
+# In[30]:
+
+
+null_values(creditcard_df)
+
+
+# # Primary Data Visualization
+
+# In[31]:
+
+
+import plotly.express as px
+import plotly.graph_objects as go
+import plotly.io as pio
+import plotly.figure_factory as ff
+from plotly.subplots import make_subplots
+
+
+# In[32]:
+
+
+def optimal_bins(df, dt):
+  
+    data_max = max(df[dt])  # lower end of data
+    data_min = min(df[dt])  # upper end of data
+    n_min = 2  # Minimum number of bins Ideal value = 2
+    n_max = 200  # Maximum number of bins  Ideal value =200
+    n_shift = 30  # number of shifts Ideal value = 30
+    N = np.array(range(n_min, n_max))
+    D = float(data_max - data_min) / N  # Bin width vector
+    Cs = np.zeros((len(D), n_shift))  # Cost function vector
+    for i in range(np.size(N)):
+        shift = np.linspace(0, D[i], n_shift)
+        for j in range(n_shift):
+            edges = np.linspace(data_min + shift[j] - D[i] / 2, data_max + shift[j] - D[i] / 2,
+                                N[i] + 1)  # shift the Bin edges
+            binindex = np.digitize(df[dt], edges)  # Find binindex of each data point
+            ki = np.bincount(binindex)[1:N[i] + 1]  # Find number of points in each bin
+            k = np.mean(ki)  # Mean of event count
+            v = sum((ki - k) ** 2) / N[i]  # Variance of event count
+            Cs[i, j] += (2 * k - v) / ((D[i]) ** 2)  # The cost Function
+    C = Cs.mean(1)
+    # Optimal Bin Size Selection
+    cmin = C.min()
+    idx = np.where(C == cmin)
+    idx = idx[0][0]
+    return int(N[idx])
+
+
+# In[33]:
+
+
+bin_count = optimal_bins(creditcard_df, "BALANCE")
+
+
+# In[34]:
+
+
+fig = px.histogram(data_frame=creditcard_df, x="BALANCE",nbins=bin_count,histnorm='probability')
+fig.show()
+
+
+# In[35]:
+
+
+fig = ff.create_distplot([creditcard_df["BALANCE"]], ["BALANCE"],bin_size=bin_count, show_rug=True, show_curve=True)
+fig.update_layout(width=1000, 
+                  height=1000,
+                  bargap=0.01)
+
+
+# In[36]:
+
+
+c_bincount = optimal_bins(creditcard_df, "CREDIT_LIMIT")
+
+
+# In[37]:
+
+
+fig = px.histogram(data_frame=creditcard_df, x="CREDIT_LIMIT", nbins=c_bincount, histnorm='probability')
+fig.show()
+
+
+# In[38]:
+
+
+fig = ff.create_distplot([creditcard_df["CREDIT_LIMIT"]], ["CREDIT_LIMIT"],bin_size=c_bincount, show_rug=True, show_curve=True)
+fig.update_layout(width=1000, 
+                  height=1000,
+                  bargap=0.01)
+fig.show()
+
+
+# In[39]:
+
+
+p_bincount = optimal_bins(creditcard_df, "PURCHASES")
+
+
+# In[40]:
+
+
+fig = px.histogram(data_frame=creditcard_df, x="PURCHASES", nbins=p_bincount)
+fig.show()
+
+
+# In[41]:
+
+
+fig = ff.create_distplot([creditcard_df["PURCHASES"]], ["PURCHASES"],bin_size=p_bincount, show_rug=True, show_curve=True)
+fig.update_layout(width=1000, 
+                  height=1000,
+                  bargap=0.01)
+
+
+# In[42]:
+
+
+pa_bincount = optimal_bins(creditcard_df, "PAYMENTS")
+
+
+# In[43]:
+
+
+fig = px.histogram(data_frame=creditcard_df, x="PAYMENTS", nbins=pa_bincount, histnorm='probability')
+fig.show()
+
+
+# In[44]:
+
+
+fig = ff.create_distplot([creditcard_df["PAYMENTS"]], ["PAYMENTS"],bin_size=pa_bincount, show_rug=True, show_curve=True)
+fig.update_layout(width=1000, 
+                  height=1000,
+                  bargap=0.01)
+fig.show()
+
+
+# In[45]:
+
+
+trace0 = go.Box(y=creditcard_df["BALANCE"], name="BALANCE", boxmean=True)
+trace1 = go.Box(y=creditcard_df["PURCHASES"], name="PURCHASES", boxmean=True)
+trace2 = go.Box(y=creditcard_df["ONEOFF_PURCHASES"], name="ONEOFF_PURCHASES", boxmean=True)
+trace3 = go.Box(y=creditcard_df["INSTALLMENTS_PURCHASES"], name="INSTALLMENTS_PURCHASES", boxmean=True)
+trace4 = go.Box(y=creditcard_df["CASH_ADVANCE"], name="CASH_ADVANCE", boxmean=True)
+traces = [trace0, trace1, trace2, trace3, trace4]
+layout = go.Layout(title="BoxPlot for Data")
+fig_go = go.Figure(data=traces, layout=layout)
+fig_go.show()
+
+
+# In[46]:
+
+
+trace0 = go.Box(y=creditcard_df["BALANCE_FREQUENCY"], name="BALANCE_FREQUENCY", boxmean=True)
+trace1 = go.Box(y=creditcard_df["PURCHASES_FREQUENCY"], name="PURCHASES_FREQUENCY", boxmean=True)
+trace2 = go.Box(y=creditcard_df["PURCHASES_INSTALLMENTS_FREQUENCY"], name="PURCHASES_INSTALLMENTS_FREQUENCY", boxmean=True)
+trace3 = go.Box(y=creditcard_df["CASH_ADVANCE_FREQUENCY"], name="CASH_ADVANCE_FREQUENCY", boxmean=True)
+trace4 = go.Box(y=creditcard_df["PRC_FULL_PAYMENT"], name="PRC_FULL_PAYMENT", boxmean=True)
+traces = [trace0, trace1, trace2, trace3, trace4]
+layout = go.Layout(title="BoxPlot for Data")
+fig_go = go.Figure(data=traces, layout=layout)
+fig_go.show()
+
+
+# In[47]:
+
+
+trace0 = go.Box(y=creditcard_df["CASH_ADVANCE_TRX"], name="CASH_ADVANCE_TRX", boxmean=True)
+trace1 = go.Box(y=creditcard_df["PURCHASES_TRX"], name="PURCHASES_TRX", boxmean=True)
+trace2 = go.Box(y=creditcard_df["TENURE"], name="TENURE", boxmean=True)
+traces = [trace0, trace1, trace2]
+layout = go.Layout(title="BoxPlot for Data")
+fig_go = go.Figure(data=traces, layout=layout)
+fig_go.show()
+
+
+# In[48]:
+
+
+trace0 = go.Box(y=creditcard_df["CREDIT_LIMIT"], name="CREDIT_LIMIT", boxmean=True)
+trace1 = go.Box(y=creditcard_df["PAYMENTS"], name="PAYMENTS", boxmean=True)
+trace2 = go.Box(y=creditcard_df["MINIMUM_PAYMENTS"], name="MINIMUM_PAYMENTS", boxmean=True)
+traces = [trace0, trace1, trace2]
+layout = go.Layout(title="BoxPlot for Data")
+fig_go = go.Figure(data=traces, layout=layout)
+fig_go.show()
+
+
+# # Data Processing
+
+# In[49]:
+
+
+#Processing outlier values
+
+# BALANCE
+outliers(creditcard_df,"BALANCE")
+# CREDIT_LIMIT
+outliers(creditcard_df,"CREDIT_LIMIT")
+
+# PURCHASES
+outliers(creditcard_df, "PURCHASES")
+# PAYMENTS
+outliers(creditcard_df, "PAYMENTS")
+
+
+# In[50]:
+
+
+# BALANCE_FREQUENCY
+outliers(creditcard_df, "BALANCE_FREQUENCY")
+# ONEOFF_PURCHASES
+outliers(creditcard_df, "ONEOFF_PURCHASES")
+# INSTALLMENTS_PURCHASES
+outliers(creditcard_df, "INSTALLMENTS_PURCHASES")
+# CASH_ADVANCE
+outliers(creditcard_df, "CASH_ADVANCE")
+
+
+# In[51]:
+
+
+# PURCHASES_FREQUENCY
+outliers(creditcard_df, "PURCHASES_FREQUENCY")
+# ONEOFF_PURCHASES_FREQUENCY
+outliers(creditcard_df, "ONEOFF_PURCHASES_FREQUENCY")
+
+# MINIMUM_PAYMENTS
+outliers(creditcard_df, "MINIMUM_PAYMENTS")
+# PRC_FULL_PAYMENT
+outliers(creditcard_df, "PRC_FULL_PAYMENT")
+# TENURE
+outliers(creditcard_df, "TENURE")
+
+
+# In[52]:
+
+
+# CASH_ADVANCE_TRX
+outliers(creditcard_df, "CASH_ADVANCE_TRX")
+# PURCHASES_TRX
+outliers(creditcard_df, "PURCHASES_TRX")
+# PURCHASES_INSTALLMENTS_FREQUENCY
+outliers(creditcard_df, "PURCHASES_INSTALLMENTS_FREQUENCY")
+# CASH_ADVANCE_FREQUENCY
+outliers(creditcard_df, "CASH_ADVANCE_FREQUENCY")
+
+
+# In[53]:
+
+
+creditcard_df["Monthly_PURCHASES"]=creditcard_df["PURCHASES"]/creditcard_df["TENURE"]
+
+creditcard_df["Monthly_CASH_ADVANCE"]=creditcard_df["CASH_ADVANCE"]/creditcard_df["TENURE"]
+
+creditcard_df['LIMIT_USAGE']=creditcard_df['BALANCE']/creditcard_df['CREDIT_LIMIT']
+
+creditcard_df["PAYMENTS_MIN"] = creditcard_df["PAYMENTS"]/creditcard_df["MINIMUM_PAYMENTS"]
+
+
+# In[54]:
+
+
+for d in creditcard_df:
+    creditcard_df.loc[(creditcard_df["ONEOFF_PURCHASES"] == 0) & (creditcard_df["INSTALLMENTS_PURCHASES"] == 0), "PURCHASES_TYPE"] = "none"
+    creditcard_df.loc[(creditcard_df["ONEOFF_PURCHASES"] > 0) & (
+            creditcard_df["INSTALLMENTS_PURCHASES"] > 0), "PURCHASES_TYPE"] = "oneoff_installment "
+    creditcard_df.loc[(creditcard_df["ONEOFF_PURCHASES"] > 0) & (creditcard_df["INSTALLMENTS_PURCHASES"] == 0), "PURCHASES_TYPE"] = "one_off"
+    creditcard_df.loc[
+        (creditcard_df["ONEOFF_PURCHASES"] == 0) & (creditcard_df["INSTALLMENTS_PURCHASES"] > 0), "PURCHASES_TYPE"] = "installment"
+
+
+# In[55]:
+
+
+creditcard_df["PURCHASES_TYPE"].head()
+
+
+# In[56]:
+
+
+creditcard_df.head(10)
+
+
+# In[61]:
+
+
+data=creditcard_df.join(pd.get_dummies(creditcard_df["PURCHASES_TYPE"]))
+
+
+# In[62]:
+
+
+Pearson_corr = data.corr()
+trace = go.Heatmap(z=Pearson_corr.values,
+                  x=Pearson_corr.index.values,
+                  y=Pearson_corr.columns.values)
+traces=[trace]
+layout = go.Layout(title="Pearson Correlation" ,width = 1050, height = 900,
+    autosize = False)
+fig_go = go.Figure(data=traces, layout=layout)
+fig_go.show()
+
+
+# In[63]:
+
+
+Spearman_corr = data.corr(method="spearman")
+trace = go.Heatmap(z=Spearman_corr.values,
+                  x=Spearman_corr.index.values,
+                  y=Spearman_corr.columns.values)
+traces=[trace]
+layout = go.Layout(title="Spearman Correlation" ,width = 1050, height = 900,
+    autosize = False)
+fig_go = go.Figure(data=traces, layout=layout)
+fig_go.show()
+
+
+# In[64]:
+
+
+Kendall_corr = data.corr(method="kendall")
+trace = go.Heatmap(z= Kendall_corr.values,
+                  x= Kendall_corr.index.values,
+                  y= Kendall_corr.columns.values)
+traces=[trace]
+layout = go.Layout(title="Kendall Correlation" ,width = 1050, height = 900,
+    autosize = False)
+fig_go = go.Figure(data=traces, layout=layout)
+fig_go.show()
+
+
+# In[65]:
+
+
+df_data = data.drop("PURCHASES_TYPE",axis=1)
+df_data.info()
+
+
+# # Unsupervised Machine Learning Model
+# 1.Scale Data
+# 2. Hopikins Statistic
+# 3.Clustring
+# 4. PCA
+# 5. IncrementalPCA
+# 6. K-MEANS Algorithm
+
+# In[66]:
+
+
+from sklearn.preprocessing import StandardScaler
+
+
+# In[67]:
+
+
+scale_data = pd.DataFrame(StandardScaler().fit_transform(df_data), columns= df_data.columns)
+
+
+# In[68]:
+
+
+scale_data.head()
+
+
+# In[69]:
+
+
+# hopikins statistic to test Cluster tendency
+from sklearn.neighbors import NearestNeighbors
+from random import sample
+from numpy.random import uniform
+import numpy as np
+from math import isnan
+
+
+# In[70]:
+
+
+def hopkins(X):
+    d = X.shape[1]
+    # d = len(vars) # columns
+    n = len(X)  # rows
+    m = int(0.1 * n)  # heuristic from article [1]
+    nbrs = NearestNeighbors(n_neighbors=1).fit(X.values)
+
+    rand_X = sample(range(0, n, 1), m)
+
+    ujd = []
+    wjd = []
+    for j in range(0, m):
+        u_dist, _ = nbrs.kneighbors(uniform(np.amin(X, axis=0), np.amax(X, axis=0), d).reshape(1, -1), 2,
+                                    return_distance=True)
+        ujd.append(u_dist[0][1])
+        w_dist, _ = nbrs.kneighbors(X.iloc[rand_X[j]].values.reshape(1, -1), 2, return_distance=True)
+        wjd.append(w_dist[0][1])
+
+    H = sum(ujd) / (sum(ujd) + sum(wjd))
+    if isnan(H):
+        print(ujd, wjd)
+        H = 0
+
+    return H
+
+
+# In[71]:
+
+
+# test for data before Dimensionality reduction by Principal Component Analysis.
+hopkins(df_data)
+
+
+# In[72]:
+
+
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+from sklearn.decomposition import IncrementalPCA
+from sklearn.metrics.pairwise import cosine_similarity
+
+
+# In[73]:
+
+
+data_sim = 1- cosine_similarity(scale_data)
+pca = PCA(n_components = 0.95, random_state=42)
+pca.fit(data_sim)
+reduced = pca.transform(data_sim)
+
+
+# In[74]:
+
+
+fig = go.Figure()
+fig.add_trace(
+    go.Line(x= (pca.explained_variance_ratio_).tolist(),
+            y= list(range(0,6)) )
+)
+fig.update_layout(
+    title="Principal Component Analysis",
+    yaxis_title="Number of Components",
+    xaxis_title="Explained Variance Ratio",
+    font=dict(
+        family="Courier New, monospace",
+        size=18,
+        color="#7f7f7f"
+    )
+)
+
+fig.show()
+
+
+# In[75]:
+
+
+df_pca = pd.DataFrame({"PC1":pca.components_[0],"PC2":pca.components_[1],"PC3":pca.components_[2],"PC4":pca.components_[3],"PC5":pca.components_[4],"PC6":pca.components_[5]})
+df_pca.head()
+
+
+# In[76]:
+
+
+sum(pca.components_[2])
+
+
+# In[77]:
+
+
+pca_dict= {'Feature':list(scale_data.columns),"PC1":pca.components_[0],"PC2":pca.components_[1],"PC3":pca.components_[2],"PC4":pca.components_[3],"PC5":pca.components_[4],"PC6":pca.components_[5]}
+pcas_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in pca_dict.items()]))
+pcas_df.head(24)
+
+
+# In[78]:
+
+
+fig = px.scatter(pcas_df, x = "Feature", y =["PC1","PC2","PC3","PC4","PC5","PC6"], labels={"x":"Feature", "y":"PCA"})
+fig.show()
+
+
+# In[79]:
+
+
+hopkins(df_pca)
+
+
+# In[80]:
+
+
+# IncrementalPCA
+pca_inc = IncrementalPCA(n_components=6)
+reduced_inc = pca_inc.fit_transform(data_sim)
+
+
+# In[81]:
+
+
+fig = go.Figure()
+fig.add_trace(
+    go.Line(x= pca_inc.explained_variance_ratio_.tolist(),
+            y= list(range(0,6)))
+)
+fig.update_layout(
+    title=" Incremental Principal Component Analysis",
+    yaxis_title="Number of Components",
+    xaxis_title="Explained Variance Ratio",
+    font=dict(
+        family="Courier New, monospace",
+        size=18,
+        color="#7f7f7f"
+    )
+)
+
+fig.show()
+
+
+# In[82]:
+
+
+df_pca_inc = pd.DataFrame({"PC1":pca_inc.components_[0],"PC2":pca_inc.components_[1],"PC3":pca_inc.components_[2],
+                           "PC4":pca_inc.components_[3],"PC5":pca_inc.components_[4],"PC6":pca_inc.components_[5]})
+df_pca_inc.head()
+
+
+# In[83]:
+
+
+# Elbow law
+cost=[]
+for n_clusters in range(2,16):
+    kmean= KMeans(n_clusters=n_clusters)
+    kmean.fit(df_pca_inc)
+    cost.append(kmean.inertia_)
+
+
+# In[84]:
+
+
+fig = px.line(x= cost, y= list(range(2,16)), title="The Elbow method for optimal K", labels={"y":"Number of Cluster", "x":"WCSS"})
+fig.show()
+
+
+# In[85]:
+
+
+# Silhouette Score
+from sklearn.metrics import silhouette_score
+
+
+# In[86]:
+
+
+sse_incpca = {}
+for n_clusters in range(2,16):
+    clusterer = KMeans(n_clusters=n_clusters)
+    preds = clusterer.fit_predict(df_pca_inc)
+    centers = clusterer.cluster_centers_
+    sse_incpca[n_clusters] = silhouette_score(df_pca_inc, clusterer.labels_)
+    score = silhouette_score(df_pca_inc, preds)
+    print("For n_clusters = {}, silhouette score is {})".format(n_clusters, score))
+
+
+# In[87]:
+
+
+fig = px.line(x= sse_incpca.values(), y= sse_incpca.keys(), title="The Silhouette Score for optimal K", labels={"y":"Number of Cluster", "x":"Score"})
+fig.show()
+
+
+# In[88]:
+
+
+#K-MEANS Algorithm
+k_means = KMeans(n_clusters=4, max_iter=100000, random_state =42)
+k_means.fit(df_pca_inc)
+data_kmeans = k_means.transform(df_pca_inc)
+
+
+# In[89]:
+
+
+clusters = pd.concat([df_pca_inc, pd.DataFrame({"ClusterID":k_means.labels_})], axis=1)
+clusters.tail()
+
+
+# In[90]:
+
+
+clusters.ClusterID.value_counts()
+
+
+# In[91]:
+
+
+hopkins(clusters)
+
+
+# In[92]:
+
+
+from sklearn import metrics
+metrics.calinski_harabasz_score(df_pca_inc, k_means.labels_)
+
+
+# In[93]:
+
+
+silhouette_score(df_pca_inc, k_means.labels_)
+
+
+# In[94]:
+
+
+cluster0 = clusters[clusters["ClusterID"] == 0]
+cluster1 = clusters[clusters["ClusterID"] == 1]
+cluster2 = clusters[clusters["ClusterID"] == 2]
+cluster3 = clusters[clusters["ClusterID"] == 3]
+
+
+# In[97]:
+
+
+from plotly.offline import download_plotlyjs, init_notebook_mode, plot, iplot
+
+
+# In[98]:
+
+
+trace1 = go.Scatter3d(
+                    x = cluster0["PC1"],
+                    y =  cluster0["PC2"],
+                    z = cluster0["ClusterID"],
+                    mode = "markers",
+                    name = "Cluster 0",
+                    marker = dict(color = "red"),
+                    text = None)
+
+#trace2 is for 'Cluster 1'
+trace2 = go.Scatter3d(
+                    x = cluster1["PC1"],
+                    y = cluster1["PC2"],
+                    z = cluster1["ClusterID"],
+                    mode = "markers",
+                    name = "Cluster 1",
+                    marker = dict(color = "black"),
+                    text = None)
+
+#trace3 is for 'Cluster 2'
+trace3 = go.Scatter3d(
+                    x = cluster2["PC1"],
+                    y = cluster2["PC2"],
+                    z = cluster2["ClusterID"],
+                    mode = "markers",
+                    name = "Cluster 2",
+                    marker = dict(color = "white"),
+                    text = None)
+#trace4 is for 'Cluster 3'
+trace4 = go.Scatter3d(
+                    x = cluster3["PC1"],
+                    y = cluster3["PC2"],
+                    z = cluster3["ClusterID"],
+                    mode = "markers",
+                    name = "Cluster 3",
+                    marker = dict(color = "yellow"),
+                    text = None)
+
+
+data = [trace1, trace2, trace3, trace4]
+
+title = "Visualizing Clusters in Three Dimensions Using PCA"
+
+layout = dict(title = title,
+              xaxis= dict(title= 'PC1',ticklen= 5,zeroline= False),
+              yaxis= dict(title= 'PC2',ticklen= 5,zeroline= False)
+             )
+
+fig = dict(data = data, layout = layout)
+
+iplot(fig)
+
+
+# In[99]:
+
+
+trace1 = go.Scatter(
+                    x = cluster0["PC1"],
+                    y =  cluster0["PC2"],
+                   
+                    mode = "markers",
+                    name = "Cluster 0",
+                    marker = dict(color = "red"),
+                    text = None)
+
+#trace2 is for 'Cluster 1'
+trace2 = go.Scatter(
+                    x = cluster1["PC1"],
+                    y = cluster1["PC2"],
+                    
+                    mode = "markers",
+                    name = "Cluster 1",
+                    marker = dict(color = "black"),
+                    text = None)
+
+#trace3 is for 'Cluster 2'
+trace3 = go.Scatter(
+                    x = cluster2["PC1"],
+                    y = cluster2["PC2"],
+                    
+                    mode = "markers",
+                    name = "Cluster 2",
+                    marker = dict(color = "green"),
+                    text = None)
+#trace4 is for 'Cluster 3'
+trace4 = go.Scatter(
+                    x = cluster3["PC1"],
+                    y = cluster3["PC2"],
+                    
+                    mode = "markers",
+                    name = "Cluster 3",
+                    marker = dict(color = "yellow"),
+                    text = None)
+
+
+data = [trace1, trace2, trace3, trace4]
+
+title = "Visualizing Clusters in Three Dimensions Using PCA"
+
+layout = dict(title = title,
+              xaxis= dict(title= 'PC1',ticklen= 5,zeroline= False),
+              yaxis= dict(title= 'PC2',ticklen= 5,zeroline= False)
+             )
+
+fig = dict(data = data, layout = layout)
+
+iplot(fig)
+
+
+# In[ ]:
+
+
+
+
